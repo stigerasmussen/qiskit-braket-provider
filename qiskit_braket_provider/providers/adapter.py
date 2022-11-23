@@ -1,16 +1,20 @@
 """Util function for provider."""
-from typing import Callable, Dict, Iterable, List, Optional, Tuple, Union
+from typing import Iterable, List, Dict, Callable
+from typing import Tuple, Union, Optional
 
 from braket.aws import AwsDevice
-from braket.circuits import Circuit, Instruction, gates, result_types
+from braket.circuits import Instruction, Circuit, result_types
+from braket.circuits import gates
 from braket.device_schema import (
-    DeviceActionType,
-    GateModelQpuParadigmProperties,
     JaqcdDeviceActionProperties,
+    GateModelQpuParadigmProperties,
+    DeviceActionType,
 )
 from braket.device_schema.ionq import IonqDeviceCapabilities
 from braket.device_schema.oqc import OqcDeviceCapabilities
-from braket.device_schema.rigetti import RigettiDeviceCapabilities
+from braket.device_schema.rigetti import (
+    RigettiDeviceCapabilities,
+)
 from braket.device_schema.simulators import (
     GateModelSimulatorDeviceCapabilities,
     GateModelSimulatorParadigmProperties,
@@ -18,40 +22,38 @@ from braket.device_schema.simulators import (
 from braket.devices import LocalSimulator
 from numpy import pi
 from qiskit import QuantumCircuit
-from qiskit.circuit import Instruction as QiskitInstruction
-from qiskit.circuit import Measure, Parameter
+from qiskit.circuit import Instruction as QiskitInstruction, Parameter, Measure
 from qiskit.circuit.library import (
-    CCXGate,
-    CPhaseGate,
-    CSwapGate,
+    HGate,
     CXGate,
+    CSwapGate,
     CYGate,
     CZGate,
-    ECRGate,
-    HGate,
     IGate,
-    PhaseGate,
     RXGate,
-    RXXGate,
     RYGate,
-    RYYGate,
     RZGate,
-    RZZGate,
-    SdgGate,
     SGate,
+    SdgGate,
     SwapGate,
-    SXdgGate,
-    SXGate,
-    TdgGate,
     TGate,
-    U1Gate,
-    U2Gate,
-    U3Gate,
+    TdgGate,
     XGate,
     YGate,
     ZGate,
+    RZZGate,
+    RXXGate,
+    RYYGate,
+    SXGate,
+    PhaseGate,
+    SXdgGate,
+    CPhaseGate,
+    CCXGate,
+    U1Gate,
+    U2Gate,
+    U3Gate,
 )
-from qiskit.transpiler import InstructionProperties, Target
+from qiskit.transpiler import Target, InstructionProperties
 
 from qiskit_braket_provider.exception import QiskitBraketException
 
@@ -84,7 +86,6 @@ qiskit_to_braket_gate_names_mapping = {
     "cp": "cphaseshift",
     "rxx": "xx",
     "ryy": "yy",
-    "ecr": "ecr",
 }
 
 
@@ -123,7 +124,6 @@ qiskit_gate_names_to_braket_gates: Dict[str, Callable] = {
     "cswap": lambda: [gates.CSwap()],
     "rxx": lambda angle: [gates.XX(angle)],
     "ryy": lambda angle: [gates.YY(angle)],
-    "ecr": lambda: [gates.ECR()],
 }
 
 
@@ -156,7 +156,6 @@ qiskit_gate_name_to_braket_gate_mapping: Dict[str, Optional[QiskitInstruction]] 
     "yy": RYYGate(Parameter("theta")),
     "z": ZGate(),
     "zz": RZZGate(Parameter("theta")),
-    "ecr": ECRGate(),
 }
 
 
@@ -183,6 +182,7 @@ def local_simulator_to_target(simulator: LocalSimulator) -> Target:
         target for Qiskit backend
     """
     target = Target()
+    target.add_instruction(Measure())
 
     instructions = [
         inst
@@ -191,26 +191,17 @@ def local_simulator_to_target(simulator: LocalSimulator) -> Target:
     ]
     properties = simulator.properties
     paradigm: GateModelSimulatorParadigmProperties = properties.paradigm
-
-    # add measurement instruction
-    target.add_instruction(Measure(), {(i,): None for i in range(paradigm.qubitCount)})
-
     for instruction in instructions:
         instruction_props: Optional[
             Dict[Union[Tuple[int], Tuple[int, int]], Optional[InstructionProperties]]
         ] = {}
 
-        if instruction.num_qubits == 1:
-            for i in range(paradigm.qubitCount):
-                instruction_props[(i,)] = None
-            target.add_instruction(instruction, instruction_props)
-        elif instruction.num_qubits == 2:
-            for src in range(paradigm.qubitCount):
-                for dst in range(paradigm.qubitCount):
-                    if src != dst:
-                        instruction_props[(src, dst)] = None
-                        instruction_props[(dst, src)] = None
-            target.add_instruction(instruction, instruction_props)
+        for src in range(paradigm.qubitCount):
+            for dst in range(paradigm.qubitCount):
+                if src != dst:
+                    instruction_props[(src, dst)] = None
+                    instruction_props[(dst, src)] = None
+        target.add_instruction(instruction, instruction_props)
 
     return target
 
@@ -226,6 +217,7 @@ def aws_device_to_target(device: AwsDevice) -> Target:
     """
     # building target
     target = Target(description=f"Target for AWS Device: {device.name}")
+    target.add_instruction(Measure())
 
     properties = device.properties
     # gate model devices
@@ -239,18 +231,12 @@ def aws_device_to_target(device: AwsDevice) -> Target:
         paradigm: GateModelQpuParadigmProperties = properties.paradigm
         connectivity = paradigm.connectivity
         instructions: List[QiskitInstruction] = []
-
         for operation in action_properties.supportedOperations:
             instruction = _op_to_instruction(operation)
             if instruction is not None:
                 # TODO: remove when target will be supporting > 2 qubit gates  # pylint:disable=fixme
                 if instruction.num_qubits <= 2:
                     instructions.append(instruction)
-
-        # add measurement instructions
-        target.add_instruction(
-            Measure(), {(i,): None for i in range(paradigm.qubitCount)}
-        )
 
         for instruction in instructions:
             instruction_props: Optional[
@@ -289,24 +275,16 @@ def aws_device_to_target(device: AwsDevice) -> Target:
         )
         simulator_paradigm: GateModelSimulatorParadigmProperties = properties.paradigm
         instructions = []
-
         for operation in simulator_action_properties.supportedOperations:
             instruction = _op_to_instruction(operation)
             if instruction is not None:
                 # TODO: remove when target will be supporting > 2 qubit gates  # pylint:disable=fixme
                 if instruction.num_qubits <= 2:
                     instructions.append(instruction)
-
-        # add measurement instructions
-        target.add_instruction(
-            Measure(), {(i,): None for i in range(simulator_paradigm.qubitCount)}
-        )
-
         for instruction in instructions:
             simulator_instruction_props: Optional[
                 Dict[
-                    Union[Tuple[int], Tuple[int, int]],
-                    Optional[InstructionProperties],
+                    Union[Tuple[int], Tuple[int, int]], Optional[InstructionProperties]
                 ]
             ] = {}
             # adding 1 qubit instructions
@@ -344,15 +322,8 @@ def convert_qiskit_to_braket_circuit(circuit: QuantumCircuit) -> Circuit:
     for qiskit_gates in circuit.data:
         name = qiskit_gates[0].name
         if name == "measure":
-            # TODO: change Probability result type for Sample for proper functioning # pylint:disable=fixme
-            # Getting the index from the bit mapping
             quantum_circuit.add_result_type(
-                result_types.Probability(
-                    target=[
-                        circuit.find_bit(qiskit_gates[1][0]).index,
-                        circuit.find_bit(qiskit_gates[2][0]).index,
-                    ]
-                )
+                result_types.Probability([qiskit_gates[1][0].index])
             )
         elif name == "barrier":
             # This does not exist
@@ -364,9 +335,7 @@ def convert_qiskit_to_braket_circuit(circuit: QuantumCircuit) -> Circuit:
 
             for gate in qiskit_gate_names_to_braket_gates[name](*params):
                 instruction = Instruction(
-                    # Getting the index from the bit mapping
-                    operator=gate,
-                    target=[circuit.find_bit(i).index for i in qiskit_gates[1]],
+                    operator=gate, target=[i.index for i in qiskit_gates[1]]
                 )
                 quantum_circuit += instruction
     return quantum_circuit
@@ -385,17 +354,3 @@ def convert_qiskit_to_braket_circuits(
     for circuit in circuits:
         yield convert_qiskit_to_braket_circuit(circuit)
 
-
-def wrap_circuits_in_verbatim_box(circuits: List[Circuit]) -> Iterable[Circuit]:
-    """Convert each Braket circuit an equivalent one wrapped in verbatim box.
-
-    Args:
-           circuits (List(Circuit): circuits to be wrapped in verbatim box.
-    Returns:
-           Circuits wrapped in verbatim box, comprising the same instructions
-           as the original one and with result types preserved.
-    """
-    return [
-        Circuit(circuit.result_types).add_verbatim_box(Circuit(circuit.instructions))
-        for circuit in circuits
-    ]
