@@ -2,7 +2,7 @@
 from typing import Callable, Dict, Iterable, List, Optional, Tuple, Union
 
 from braket.aws import AwsDevice
-from braket.circuits import Circuit, Instruction, gates, result_types
+from braket.circuits import Circuit, Instruction, gates, result_types, Observable
 from braket.device_schema import (
     DeviceActionType,
     GateModelQpuParadigmProperties,
@@ -340,10 +340,9 @@ def convert_qiskit_to_braket_circuit(circuit: QuantumCircuit) -> Circuit:
     for qiskit_gates in circuit.data:
         name = qiskit_gates[0].name
         if name == "measure":
-            # TODO: change Probability result type for Sample for proper functioning # pylint:disable=fixme
             # Getting the index from the bit mapping
             quantum_circuit.add_result_type(
-                result_types.Probability(
+                result_types.Sample(Observable.Z(),
                     target=[
                         circuit.find_bit(qiskit_gates[1][0]).index,
                         circuit.find_bit(qiskit_gates[2][0]).index,
