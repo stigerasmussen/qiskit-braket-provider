@@ -193,7 +193,7 @@ def local_simulator_to_target(simulator: LocalSimulator) -> Target:
     paradigm: GateModelSimulatorParadigmProperties = properties.paradigm
 
     # add measurement instruction
-    target.add_instruction(Measure(), {(i,): None for i in range(paradigm.qubitCount)})
+    target.add_instruction(Measure())
 
     for instruction in instructions:
         instruction_props: Optional[
@@ -248,9 +248,7 @@ def aws_device_to_target(device: AwsDevice) -> Target:
                     instructions.append(instruction)
 
         # add measurement instructions
-        target.add_instruction(
-            Measure(), {(i,): None for i in range(paradigm.qubitCount)}
-        )
+        target.add_instruction(Measure())
 
         for instruction in instructions:
             instruction_props: Optional[
@@ -298,9 +296,7 @@ def aws_device_to_target(device: AwsDevice) -> Target:
                     instructions.append(instruction)
 
         # add measurement instructions
-        target.add_instruction(
-            Measure(), {(i,): None for i in range(simulator_paradigm.qubitCount)}
-        )
+        target.add_instruction(Measure())
 
         for instruction in instructions:
             simulator_instruction_props: Optional[
