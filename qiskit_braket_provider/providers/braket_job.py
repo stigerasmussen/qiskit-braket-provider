@@ -20,8 +20,6 @@ def retry_if_result_none(result):
 
 @retry(
     retry_on_result=retry_if_result_none,
-    stop_max_delay=int(os.environ.get("QISKIT_BRAKET_PROVIDER_MAX_DELAY", 60000)),
-    wait_fixed=int(os.environ.get("QISKIT_BRAKET_PROVIDER_WAIT_TIME", 2000)),
     wrap_exception=True,
 )
 def _get_result_from_aws_tasks(
